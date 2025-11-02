@@ -61,9 +61,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if request_body:
                 try:
                     body_str = request_body.decode('utf-8')
-                    logger.debug(f"Request body: {body_str[:200]}")  # Log first 200 chars
+                    logger.info(f"Request body preview: {body_str[:500]}")  # Log first 500 chars for debugging
                 except:
-                    logger.debug(f"Request body (binary): {len(request_body)} bytes")
+                    logger.info(f"Request body (binary): {len(request_body)} bytes")
+            else:
+                logger.warning(f"Empty request body for {request.url.path}")
 
             # Parse JSON from bytes for auth checks
             try:
@@ -92,23 +94,44 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 raise HTTPException(status_code=401, detail="Token validation failed")
 
             # Restore the request body so downstream handlers can read it
-            # Replace the request's _receive to replay body
-            body_sent = [False]  # Use list for mutable in closure
+            # Clear any cached body and create a new receive callable
+            if hasattr(request, '_body'):
+                delattr(request, '_body')
+            if hasattr(request, '_json'):
+                delattr(request, '_json')
             
-            async def receive_wrapper():
-                if not body_sent[0]:
-                    body_sent[0] = True
-                    return {"type": "http.request", "body": request_body}
+            # Store original receive
+            original_receive = request._receive
+            
+            # Create a closure to replay the body
+            body_bytes = request_body
+            body_sent = False
+            
+            async def receive():
+                nonlocal body_sent
+                if not body_sent:
+                    body_sent = True
+                    return {"type": "http.request", "body": body_bytes}
+                # Return empty body after first read (ASGI spec)
                 return {"type": "http.request", "body": b""}
             
-            request._receive = receive_wrapper
+            request._receive = receive
 
             # Call next middleware/handler
             response = await call_next(request)
             
             # Log response for debugging
-            if hasattr(response, 'status_code') and response.status_code >= 400:
-                logger.warning(f"Request to {request.url.path} returned status {response.status_code}")
+            if hasattr(response, 'status_code'):
+                if response.status_code >= 400:
+                    logger.error(f"Request to {request.url.path} returned status {response.status_code}")
+                    # Try to log response body if available
+                    try:
+                        if hasattr(response, 'body'):
+                            logger.error(f"Response body: {response.body}")
+                    except:
+                        pass
+                else:
+                    logger.info(f"Request to {request.url.path} succeeded with status {response.status_code}")
             
             return response
 

@@ -36,6 +36,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Root endpoint handler
+@app.get("/")
+async def root():
+    """Root endpoint for health checks."""
+    return {"status": "ok", "service": "payment-mcp"}
+
 # MCP well-known endpoint
 @app.get("/.well-known/oauth-protected-resource/mcp")
 async def oauth_protected_resource_metadata():
