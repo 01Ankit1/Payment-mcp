@@ -41,6 +41,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
             token = auth_header.split(" ")[1]
 
+            # Read request body
             request_body = await request.body()
 
             # Parse JSON from bytes
@@ -65,7 +66,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 scalekit_client.validate_token(token, options=validation_options)
 
             except Exception as e:
+                logger.error(f"Token validation failed: {str(e)}")
                 raise HTTPException(status_code=401, detail="Token validation failed")
+
+            # Restore the request body so downstream handlers can read it
+            # ASGI receive callable must return the body on first call, then empty on subsequent calls
+            body_sent = False
+            async def receive():
+                nonlocal body_sent
+                if not body_sent:
+                    body_sent = True
+                    return {"type": "http.request", "body": request_body}
+                return {"type": "http.request", "body": b""}
+            
+            request._receive = receive
 
         except HTTPException as e:
             return JSONResponse(
@@ -75,6 +89,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 headers={
                     "WWW-Authenticate": f'Bearer realm="OAuth", resource_metadata="{settings.SCALEKIT_RESOURCE_METADATA_URL}"'
                 }
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error in auth middleware: {str(e)}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={"error": "internal_server_error", "error_description": "An unexpected error occurred"}
             )
 
         return await call_next(request)
