@@ -44,8 +44,10 @@ async def oauth_protected_resource_metadata():
     response = json.loads(settings.METADATA_JSON_RESPONSE)
     return response
 
-# Create and mount the MCP server with authentication
+# Add authentication middleware before mounting (middleware runs in reverse order of addition)
 app.add_middleware(AuthMiddleware)
+
+# Mount the MCP server
 app.mount("/", mcp)
 
 def main():

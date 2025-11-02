@@ -43,11 +43,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
             # Read request body
             request_body = await request.body()
+            
+            # Log request details for debugging
+            logger.debug(f"Request to {request.url.path}: method={request.method}, body_length={len(request_body)}")
+            if request_body:
+                try:
+                    logger.debug(f"Request body: {request_body.decode('utf-8')[:200]}")  # Log first 200 chars
+                except:
+                    logger.debug(f"Request body (binary): {len(request_body)} bytes")
 
             # Parse JSON from bytes
             try:
                 request_data = json.loads(request_body.decode('utf-8'))
-            except (json.JSONDecodeError, UnicodeDecodeError):
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                logger.warning(f"Failed to parse request body as JSON: {str(e)}")
                 request_data = {}
 
             validation_options = TokenValidationOptions(
@@ -70,18 +79,35 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 raise HTTPException(status_code=401, detail="Token validation failed")
 
             # Restore the request body so downstream handlers can read it
-            # ASGI receive callable must return the body on first call, then empty on subsequent calls
+            # Clear any cached body attribute
+            if hasattr(request, '_body'):
+                delattr(request, '_body')
+            
+            # Store original receive and create a new one that replays the body
+            original_receive = request._receive
             body_sent = False
+            
             async def receive():
                 nonlocal body_sent
                 if not body_sent:
                     body_sent = True
                     return {"type": "http.request", "body": request_body}
+                # After sending body, return empty body as per ASGI spec
                 return {"type": "http.request", "body": b""}
             
             request._receive = receive
 
+            # Call next middleware/handler and capture response
+            response = await call_next(request)
+            
+            # Log response for debugging
+            if hasattr(response, 'status_code') and response.status_code >= 400:
+                logger.warning(f"Request to {request.url.path} returned status {response.status_code}")
+            
+            return response
+
         except HTTPException as e:
+            logger.warning(f"HTTPException: {e.status_code} - {e.detail} for path {request.url.path}")
             return JSONResponse(
                 status_code=e.status_code,
                 content={"error": "unauthorized" if e.status_code == 401 else "forbidden",
@@ -91,11 +117,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 }
             )
         except Exception as e:
-            logger.error(f"Unexpected error in auth middleware: {str(e)}", exc_info=True)
+            logger.error(f"Unexpected error in auth middleware for path {request.url.path}: {str(e)}", exc_info=True)
             return JSONResponse(
                 status_code=500,
                 content={"error": "internal_server_error", "error_description": "An unexpected error occurred"}
             )
-
-        return await call_next(request)
 
