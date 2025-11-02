@@ -16,6 +16,9 @@ from src.config import settings
 import json
 from src.mcp import mcp as mcp
 
+# Get the FastAPI app from FastMCP
+mcp_app = mcp.streamable_http_app()
+
 # Create a combined lifespan to manage the MCP session manager
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -47,8 +50,8 @@ async def oauth_protected_resource_metadata():
 # Add authentication middleware before mounting (middleware runs in reverse order of addition)
 app.add_middleware(AuthMiddleware)
 
-# Mount the MCP server
-app.mount("/", mcp)
+# Mount the MCP server (use the app returned from streamable_http_app)
+app.mount("/", mcp_app)
 
 def main():
     """Main entry point for the MCP server."""

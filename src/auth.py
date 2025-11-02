@@ -20,18 +20,30 @@ logger = logging.getLogger(__name__)
 # Security scheme for Bearer token
 security = HTTPBearer()
 
-# Initialize ScaleKit client for auth
-scalekit_client = ScalekitClient(
-    settings.SCALEKIT_ENVIRONMENT_URL,
-    settings.SCALEKIT_CLIENT_ID,
-    settings.SCALEKIT_CLIENT_SECRET
-)
+# ScaleKit client will be initialized lazily (only when needed)
+_scalekit_client = None
+
+def get_scalekit_client():
+    """Get or create the ScaleKit client instance (lazy initialization)."""
+    global _scalekit_client
+    if _scalekit_client is None:
+        _scalekit_client = ScalekitClient(
+            settings.SCALEKIT_ENVIRONMENT_URL,
+            settings.SCALEKIT_CLIENT_ID,
+            settings.SCALEKIT_CLIENT_SECRET
+        )
+    return _scalekit_client
 
 
 # Authentication middleware
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # Skip auth for well-known endpoints
         if request.url.path.startswith("/.well-known/"):
+            return await call_next(request)
+        
+        # Skip auth for GET requests (health checks, pre-flight checks)
+        if request.method == "GET":
             return await call_next(request)
 
         try:
@@ -41,20 +53,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
             token = auth_header.split(" ")[1]
 
-            # Read request body
+            # Read request body once
             request_body = await request.body()
             
             # Log request details for debugging
-            logger.debug(f"Request to {request.url.path}: method={request.method}, body_length={len(request_body)}")
+            logger.info(f"Request to {request.url.path}: method={request.method}, body_length={len(request_body)}")
             if request_body:
                 try:
-                    logger.debug(f"Request body: {request_body.decode('utf-8')[:200]}")  # Log first 200 chars
+                    body_str = request_body.decode('utf-8')
+                    logger.debug(f"Request body: {body_str[:200]}")  # Log first 200 chars
                 except:
                     logger.debug(f"Request body (binary): {len(request_body)} bytes")
 
-            # Parse JSON from bytes
+            # Parse JSON from bytes for auth checks
             try:
-                request_data = json.loads(request_body.decode('utf-8'))
+                request_data = json.loads(request_body.decode('utf-8')) if request_body else {}
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.warning(f"Failed to parse request body as JSON: {str(e)}")
                 request_data = {}
@@ -72,32 +85,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 validation_options.required_scopes = required_scopes
 
             try:
+                scalekit_client = get_scalekit_client()
                 scalekit_client.validate_token(token, options=validation_options)
-
             except Exception as e:
                 logger.error(f"Token validation failed: {str(e)}")
                 raise HTTPException(status_code=401, detail="Token validation failed")
 
             # Restore the request body so downstream handlers can read it
-            # Clear any cached body attribute
-            if hasattr(request, '_body'):
-                delattr(request, '_body')
+            # Replace the request's _receive to replay body
+            body_sent = [False]  # Use list for mutable in closure
             
-            # Store original receive and create a new one that replays the body
-            original_receive = request._receive
-            body_sent = False
-            
-            async def receive():
-                nonlocal body_sent
-                if not body_sent:
-                    body_sent = True
+            async def receive_wrapper():
+                if not body_sent[0]:
+                    body_sent[0] = True
                     return {"type": "http.request", "body": request_body}
-                # After sending body, return empty body as per ASGI spec
                 return {"type": "http.request", "body": b""}
             
-            request._receive = receive
+            request._receive = receive_wrapper
 
-            # Call next middleware/handler and capture response
+            # Call next middleware/handler
             response = await call_next(request)
             
             # Log response for debugging

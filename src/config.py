@@ -18,7 +18,8 @@ class Settings:
     # Server Port
     PORT: int = int(os.environ.get("PORT", 10000))
 
-    def __post_init__(self):
+    def __init__(self):
+        # Validate required settings
         if not self.SCALEKIT_CLIENT_ID:
             raise ValueError("SCALEKIT_CLIENT_ID environment variable not set")
         if not self.SCALEKIT_CLIENT_SECRET:
