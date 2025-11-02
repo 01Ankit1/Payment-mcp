@@ -1,7 +1,7 @@
 from mcp.server.fastmcp import FastMCP
 from typing import Dict, List
 
-from .config import settings
+from src.config import settings
 
 # Create an MCP server
 mcp = FastMCP("payment-mcp")
