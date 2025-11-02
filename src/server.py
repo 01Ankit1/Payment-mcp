@@ -4,10 +4,10 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .auth import AuthMiddleware
-from .config import settings
+from src.auth import AuthMiddleware
+from src.config import settings
 import json
-from .mcp import mcp as mcp
+from src.mcp import mcp as mcp
 
 # Create a combined lifespan to manage the MCP session manager
 @contextlib.asynccontextmanager
