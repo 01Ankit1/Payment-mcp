@@ -111,9 +111,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 nonlocal body_sent
                 if not body_sent:
                     body_sent = True
-                    return {"type": "http.request", "body": body_bytes}
+                    return {
+                        "type": "http.request",
+                        "body": body_bytes,
+                        "more_body": False,
+                    }
                 # Return empty body after first read (ASGI spec)
-                return {"type": "http.request", "body": b""}
+                return {"type": "http.request", "body": b"", "more_body": False}
             
             request._receive = receive
 
