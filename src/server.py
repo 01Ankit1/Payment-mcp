@@ -9,15 +9,16 @@ if str(project_root) not in sys.path:
 import contextlib
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.auth import AuthMiddleware
 from src.config import settings
 import json
-from src.mcp import mcp as mcp
+from src.mcp import create_streamable_http_app, mcp
 
 # Get the FastAPI app from FastMCP
-mcp_app = mcp.streamable_http_app()
+mcp_app = create_streamable_http_app()
 
 # Create a combined lifespan to manage the MCP session manager
 @contextlib.asynccontextmanager
@@ -50,7 +51,16 @@ async def oauth_protected_resource_metadata():
     Required by the MCP specification for authorization server discovery.
     """
 
-    response = json.loads(settings.METADATA_JSON_RESPONSE)
+    try:
+        response = json.loads(settings.METADATA_JSON_RESPONSE)
+    except json.JSONDecodeError as exc:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "invalid_metadata_configuration",
+                "error_description": f"Failed to parse METADATA_JSON_RESPONSE: {exc}"},
+        )
+
     return response
 
 # Add authentication middleware before mounting (middleware runs in reverse order of addition)
