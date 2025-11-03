@@ -3,6 +3,12 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+
+async def _healthcheck(_: Request) -> JSONResponse:
+    """Basic healthcheck for direct MCP app access."""
+
+    return JSONResponse({"status": "ok", "service": "payment-mcp"})
+
 # Create an MCP server
 mcp = FastMCP("payment-mcp")
 
@@ -12,11 +18,7 @@ def create_streamable_http_app() -> Starlette:
 
     app = mcp.streamable_http_app()
 
-    @app.route("/", methods=["GET"])
-    async def healthcheck(_: Request) -> JSONResponse:
-        """Basic healthcheck for direct MCP app access."""
-
-        return JSONResponse({"status": "ok", "service": "payment-mcp"})
+    app.router.add_route("/", _healthcheck, methods=["GET"])
 
     return app
 
