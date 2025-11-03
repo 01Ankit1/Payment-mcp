@@ -57,7 +57,7 @@ async def oauth_protected_resource_metadata():
 app.add_middleware(AuthMiddleware)
 
 # Mount the MCP server (use the app returned from streamable_http_app)
-app.mount("/", mcp_app)
+app.mount("/mcp", mcp_app)
 
 def main():
     """Main entry point for the MCP server."""
