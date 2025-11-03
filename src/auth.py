@@ -94,27 +94,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 raise HTTPException(status_code=401, detail="Token validation failed")
 
             # Restore the request body so downstream handlers can read it
-            # Clear any cached body and create a new receive callable
-            if hasattr(request, '_body'):
-                delattr(request, '_body')
+            body_bytes = request_body
+
+            # Reset Starlette's internal caches and stream state so repeated reads work
+            request._body = body_bytes
+            request._stream_consumed = False
             if hasattr(request, '_json'):
                 delattr(request, '_json')
-            
-            # Store original receive
-            original_receive = request._receive
-            
-            # Create a closure to replay the body
-            body_bytes = request_body
+
+            # Create a closure to replay the body for streaming consumers
             body_sent = False
-            
+
             async def receive():
                 nonlocal body_sent
                 if not body_sent:
                     body_sent = True
-                    return {"type": "http.request", "body": body_bytes}
+                    return {
+                        "type": "http.request",
+                        "body": body_bytes,
+                        "more_body": False,
+                    }
                 # Return empty body after first read (ASGI spec)
-                return {"type": "http.request", "body": b""}
-            
+                return {"type": "http.request", "body": b"", "more_body": False}
+
             request._receive = receive
 
             # Call next middleware/handler
