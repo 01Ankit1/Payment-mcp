@@ -116,7 +116,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     }
                 # Return empty body after first read (ASGI spec)
                 return {"type": "http.request", "body": b"", "more_body": False}
-
+            
             request._receive = receive
 
             # Call next middleware/handler
