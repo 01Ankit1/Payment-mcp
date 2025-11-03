@@ -1,20 +1,22 @@
-from fastapi import FastAPI
 from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 # Create an MCP server
 mcp = FastMCP("payment-mcp")
 
 
-def create_streamable_http_app() -> FastAPI:
-    """Return the FastAPI application used to serve the MCP protocol."""
+def create_streamable_http_app() -> Starlette:
+    """Return the ASGI application used to serve the MCP protocol."""
 
     app = mcp.streamable_http_app()
 
-    @app.get("/")
-    async def healthcheck() -> dict[str, str]:
+    @app.route("/", methods=["GET"])
+    async def healthcheck(_: Request) -> JSONResponse:
         """Basic healthcheck for direct MCP app access."""
 
-        return {"status": "ok", "service": "payment-mcp"}
+        return JSONResponse({"status": "ok", "service": "payment-mcp"})
 
     return app
 
