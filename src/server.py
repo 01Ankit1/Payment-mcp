@@ -1,67 +1,59 @@
-import sys
-from pathlib import Path
-
-# Ensure project root is in Python path for absolute imports
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 import contextlib
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from src.auth import AuthMiddleware
 from src.config import settings
-import json
-from src.mcp import mcp as mcp
+from src.mcp import create_streamable_http_app, mcp
 
-# Get the FastAPI app from FastMCP
-mcp_app = mcp.streamable_http_app()
+mcp_app = create_streamable_http_app()
 
-# Create a combined lifespan to manage the MCP session manager
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     async with mcp.session_manager.run():
         yield
 
-app = FastAPI(lifespan=lifespan)
 
-# Add CORS middleware
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Root endpoint handler
+
 @app.get("/")
 async def root():
-    """Root endpoint for health checks."""
     return {"status": "ok", "service": "payment-mcp"}
 
-# MCP well-known endpoint
+
 @app.get("/.well-known/oauth-protected-resource/mcp")
 async def oauth_protected_resource_metadata():
-    """
-    OAuth 2.0 Protected Resource Metadata endpoint for MCP client discovery.
-    Required by the MCP specification for authorization server discovery.
-    """
+    try:
+        return settings.metadata_response()
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "invalid_metadata_configuration",
+                "error_description": str(exc),
+            },
+        )
 
-    response = json.loads(settings.METADATA_JSON_RESPONSE)
-    return response
 
-# Add authentication middleware before mounting (middleware runs in reverse order of addition)
 app.add_middleware(AuthMiddleware)
-
-# Mount the MCP server (use the app returned from streamable_http_app)
 app.mount("/mcp", mcp_app)
 
-def main():
-    """Main entry point for the MCP server."""
-    uvicorn.run(app, host="0.0.0.0", port=settings.PORT, log_level="debug")
+
+def main() -> None:
+    uvicorn.run(app, host="0.0.0.0", port=settings.PORT)
+
 
 if __name__ == "__main__":
     main()

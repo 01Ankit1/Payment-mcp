@@ -1,26 +1,23 @@
+from fastapi import FastAPI
 from mcp.server.fastmcp import FastMCP
-from typing import Dict, List
 
-from src.config import settings
-
-# Create an MCP server
 mcp = FastMCP("payment-mcp")
 
 
-# Add a tool that uses Tavily
+def create_streamable_http_app() -> FastAPI:
+    """Return the FastAPI application used to serve the MCP protocol."""
+
+    app = mcp.streamable_http_app()
+
+    @app.get("/")
+    async def healthcheck() -> dict[str, str]:
+        return {"status": "ok", "service": "payment-mcp"}
+
+    return app
+
+
 @mcp.tool()
-def web_search(query: str) -> str:
-    """
-    Use this tool to search the web for information.
+def echo(message: str) -> str:
+    """Return the provided message."""
 
-    Args:
-        query: The search query.
-
-    Returns:
-        The search results.
-    """
-    try:
-
-        return "ankit"
-    except Exception as e:
-        return {"error": str(e)}
+    return message
